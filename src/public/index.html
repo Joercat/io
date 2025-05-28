@@ -1,0 +1,565 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Slither.io Clone</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Arial', sans-serif;
+            background: linear-gradient(45deg, #1e3c72, #2a5298);
+            overflow: hidden;
+            color: white;
+        }
+
+        #gameContainer {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+        }
+
+        #gameCanvas {
+            background: radial-gradient(circle, #0f2027, #203a43, #2c5364);
+            cursor: none;
+            display: block;
+        }
+
+        #ui {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 10;
+        }
+
+        #startScreen {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 40px;
+            border-radius: 20px;
+            backdrop-filter: blur(10px);
+            pointer-events: all;
+        }
+
+        #startScreen h1 {
+            font-size: 48px;
+            margin-bottom: 20px;
+            background: linear-gradient(45deg, #ff6b6b, #4ecdc4, #45b7d1);
+            background-clip: text;
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+        }
+
+        #nameInput {
+            padding: 15px;
+            font-size: 18px;
+            border: none;
+            border-radius: 10px;
+            margin: 20px 0;
+            width: 300px;
+            background: rgba(255, 255, 255, 0.1);
+            color: white;
+            text-align: center;
+        }
+
+        #nameInput::placeholder {
+            color: rgba(255, 255, 255, 0.7);
+        }
+
+        #playButton {
+            padding: 15px 40px;
+            font-size: 20px;
+            background: linear-gradient(45deg, #ff6b6b, #4ecdc4);
+            border: none;
+            border-radius: 25px;
+            color: white;
+            cursor: pointer;
+            transition: transform 0.2s;
+            margin-top: 20px;
+        }
+
+        #playButton:hover {
+            transform: scale(1.05);
+        }
+
+        #stats {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            font-size: 18px;
+            pointer-events: none;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.7);
+        }
+
+        #leaderboard {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: rgba(0, 0, 0, 0.6);
+            padding: 15px;
+            border-radius: 10px;
+            min-width: 200px;
+            pointer-events: none;
+        }
+
+        #leaderboard h3 {
+            margin-bottom: 10px;
+            color: #4ecdc4;
+        }
+
+        .leader-entry {
+            margin: 5px 0;
+            font-size: 14px;
+        }
+
+        #gameOver {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            background: rgba(0, 0, 0, 0.9);
+            padding: 40px;
+            border-radius: 20px;
+            display: none;
+            pointer-events: all;
+        }
+
+        #gameOver h2 {
+            font-size: 36px;
+            color: #ff6b6b;
+            margin-bottom: 20px;
+        }
+
+        #respawnButton {
+            padding: 15px 30px;
+            font-size: 18px;
+            background: linear-gradient(45deg, #4ecdc4, #45b7d1);
+            border: none;
+            border-radius: 20px;
+            color: white;
+            cursor: pointer;
+            margin-top: 20px;
+        }
+
+        #connectionStatus {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            padding: 10px;
+            background: rgba(0, 0, 0, 0.6);
+            border-radius: 5px;
+            font-size: 14px;
+        }
+
+        .connected { color: #4ecdc4; }
+        .disconnected { color: #ff6b6b; }
+    </style>
+</head>
+<body>
+    <div id="gameContainer">
+        <canvas id="gameCanvas"></canvas>
+        
+        <div id="ui">
+            <div id="startScreen">
+                <h1>🐍 Slither.io</h1>
+                <p>Eat orbs to grow your snake!</p>
+                <input type="text" id="nameInput" placeholder="Enter your name" maxlength="20">
+                <br>
+                <button id="playButton">Play Now</button>
+            </div>
+
+            <div id="stats">
+                <div>Length: <span id="length">0</span></div>
+                <div>Score: <span id="score">0</span></div>
+                <div>Players: <span id="playerCount">0</span></div>
+            </div>
+
+            <div id="leaderboard">
+                <h3>🏆 Leaderboard</h3>
+                <div id="leaderList"></div>
+            </div>
+
+            <div id="gameOver">
+                <h2>💀 Game Over!</h2>
+                <p>Your Score: <span id="finalScore">0</span></p>
+                <p>Length: <span id="finalLength">0</span></p>
+                <button id="respawnButton">Play Again</button>
+            </div>
+
+            <div id="connectionStatus" class="disconnected">
+                Connecting to server...
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.js"></script>
+    <script>
+        class SlitherClient {
+            constructor() {
+                this.canvas = document.getElementById('gameCanvas');
+                this.ctx = this.canvas.getContext('2d');
+                this.socket = null;
+                this.gameState = null;
+                this.playerId = null;
+                this.camera = { x: 0, y: 0 };
+                this.keys = {};
+                this.mousePos = { x: 0, y: 0 };
+                this.worldSize = 4000;
+                
+                this.setupCanvas();
+                this.setupSocket();
+                this.setupEventListeners();
+                this.setupUI();
+                
+                this.gameLoop();
+            }
+
+            setupCanvas() {
+                this.canvas.width = window.innerWidth;
+                this.canvas.height = window.innerHeight;
+                
+                window.addEventListener('resize', () => {
+                    this.canvas.width = window.innerWidth;
+                    this.canvas.height = window.innerHeight;
+                });
+            }
+
+            setupSocket() {
+                this.socket = io('http://localhost:3000');
+                
+                this.socket.on('connect', () => {
+                    document.getElementById('connectionStatus').innerHTML = 'Connected';
+                    document.getElementById('connectionStatus').className = 'connected';
+                });
+
+                this.socket.on('disconnect', () => {
+                    document.getElementById('connectionStatus').innerHTML = 'Disconnected';
+                    document.getElementById('connectionStatus').className = 'disconnected';
+                });
+
+                this.socket.on('gameState', (state) => {
+                    this.gameState = state;
+                    this.updateUI();
+                });
+
+                this.socket.on('playerDied', (data) => {
+                    if (data.playerId === this.playerId) {
+                        this.showGameOver(data.score, data.length);
+                    }
+                });
+
+                this.socket.on('playerJoined', (data) => {
+                    this.playerId = data.playerId;
+                    document.getElementById('startScreen').style.display = 'none';
+                });
+            }
+
+            setupEventListeners() {
+                document.addEventListener('keydown', (e) => {
+                    this.keys[e.key.toLowerCase()] = true;
+                    if (e.key === ' ') {
+                        e.preventDefault();
+                        this.socket?.emit('boost', true);
+                    }
+                });
+
+                document.addEventListener('keyup', (e) => {
+                    this.keys[e.key.toLowerCase()] = false;
+                    if (e.key === ' ') {
+                        this.socket?.emit('boost', false);
+                    }
+                });
+
+                document.addEventListener('mousemove', (e) => {
+                    const rect = this.canvas.getBoundingClientRect();
+                    this.mousePos.x = e.clientX - rect.left;
+                    this.mousePos.y = e.clientY - rect.top;
+                });
+
+                document.addEventListener('mousedown', () => {
+                    this.socket?.emit('boost', true);
+                });
+
+                document.addEventListener('mouseup', () => {
+                    this.socket?.emit('boost', false);
+                });
+            }
+
+            setupUI() {
+                document.getElementById('playButton').addEventListener('click', () => {
+                    const name = document.getElementById('nameInput').value.trim() || 'Anonymous';
+                    this.socket.emit('joinGame', { name });
+                });
+
+                document.getElementById('respawnButton').addEventListener('click', () => {
+                    const name = document.getElementById('nameInput').value.trim() || 'Anonymous';
+                    this.socket.emit('joinGame', { name });
+                    document.getElementById('gameOver').style.display = 'none';
+                });
+
+                document.getElementById('nameInput').addEventListener('keypress', (e) => {
+                    if (e.key === 'Enter') {
+                        document.getElementById('playButton').click();
+                    }
+                });
+            }
+
+            updateInput() {
+                if (!this.socket || !this.playerId) return;
+
+                // Calculate direction from player to mouse
+                const player = this.gameState?.players[this.playerId];
+                if (!player) return;
+
+                const centerX = this.canvas.width / 2;
+                const centerY = this.canvas.height / 2;
+                
+                const deltaX = this.mousePos.x - centerX;
+                const deltaY = this.mousePos.y - centerY;
+                const angle = Math.atan2(deltaY, deltaX);
+
+                this.socket.emit('updateDirection', { angle });
+            }
+
+            updateCamera() {
+                if (!this.gameState || !this.playerId) return;
+                
+                const player = this.gameState.players[this.playerId];
+                if (!player || !player.segments.length) return;
+
+                const head = player.segments[0];
+                this.camera.x = head.x - this.canvas.width / 2;
+                this.camera.y = head.y - this.canvas.height / 2;
+            }
+
+            render() {
+                this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+                
+                if (!this.gameState) return;
+
+                this.updateCamera();
+
+                // Draw grid
+                this.drawGrid();
+
+                // Draw food
+                this.gameState.food.forEach(f => this.drawFood(f));
+
+                // Draw players
+                Object.values(this.gameState.players).forEach(player => {
+                    this.drawPlayer(player);
+                });
+
+                // Draw world boundaries
+                this.drawBoundaries();
+            }
+
+            drawGrid() {
+                const gridSize = 50;
+                this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
+                this.ctx.lineWidth = 1;
+
+                const startX = Math.floor(this.camera.x / gridSize) * gridSize;
+                const startY = Math.floor(this.camera.y / gridSize) * gridSize;
+
+                for (let x = startX; x < this.camera.x + this.canvas.width + gridSize; x += gridSize) {
+                    this.ctx.beginPath();
+                    this.ctx.moveTo(x - this.camera.x, 0);
+                    this.ctx.lineTo(x - this.camera.x, this.canvas.height);
+                    this.ctx.stroke();
+                }
+
+                for (let y = startY; y < this.camera.y + this.canvas.height + gridSize; y += gridSize) {
+                    this.ctx.beginPath();
+                    this.ctx.moveTo(0, y - this.camera.y);
+                    this.ctx.lineTo(this.canvas.width, y - this.camera.y);
+                    this.ctx.stroke();
+                }
+            }
+
+            drawFood(food) {
+                const x = food.x - this.camera.x;
+                const y = food.y - this.camera.y;
+
+                if (x < -20 || x > this.canvas.width + 20 || y < -20 || y > this.canvas.height + 20) return;
+
+                this.ctx.fillStyle = food.color;
+                this.ctx.beginPath();
+                this.ctx.arc(x, y, food.size, 0, Math.PI * 2);
+                this.ctx.fill();
+                
+                // Add glow effect
+                this.ctx.shadowColor = food.color;
+                this.ctx.shadowBlur = 10;
+                this.ctx.fill();
+                this.ctx.shadowBlur = 0;
+            }
+
+            drawPlayer(player) {
+                if (!player.segments.length) return;
+
+                const isMe = player.id === this.playerId;
+                
+                // Draw segments
+                for (let i = player.segments.length - 1; i >= 0; i--) {
+                    const segment = player.segments[i];
+                    const x = segment.x - this.camera.x;
+                    const y = segment.y - this.camera.y;
+
+                    if (x < -50 || x > this.canvas.width + 50 || y < -50 || y > this.canvas.height + 50) continue;
+
+                    const radius = i === 0 ? player.headSize : player.bodySize;
+                    
+                    // Body gradient
+                    const gradient = this.ctx.createRadialGradient(x, y, 0, x, y, radius);
+                    gradient.addColorStop(0, player.color);
+                    gradient.addColorStop(1, this.darkenColor(player.color, 0.3));
+                    
+                    this.ctx.fillStyle = gradient;
+                    this.ctx.beginPath();
+                    this.ctx.arc(x, y, radius, 0, Math.PI * 2);
+                    this.ctx.fill();
+
+                    // Border
+                    this.ctx.strokeStyle = isMe ? '#ffffff' : this.darkenColor(player.color, 0.5);
+                    this.ctx.lineWidth = 2;
+                    this.ctx.stroke();
+
+                    // Head details
+                    if (i === 0) {
+                        // Eyes
+                        const eyeSize = radius * 0.15;
+                        const eyeOffset = radius * 0.4;
+                        
+                        this.ctx.fillStyle = 'white';
+                        this.ctx.beginPath();
+                        this.ctx.arc(x - eyeOffset, y - eyeOffset, eyeSize, 0, Math.PI * 2);
+                        this.ctx.arc(x + eyeOffset, y - eyeOffset, eyeSize, 0, Math.PI * 2);
+                        this.ctx.fill();
+                        
+                        this.ctx.fillStyle = 'black';
+                        this.ctx.beginPath();
+                        this.ctx.arc(x - eyeOffset, y - eyeOffset, eyeSize * 0.6, 0, Math.PI * 2);
+                        this.ctx.arc(x + eyeOffset, y - eyeOffset, eyeSize * 0.6, 0, Math.PI * 2);
+                        this.ctx.fill();
+                    }
+                }
+
+                // Draw name
+                if (player.name) {
+                    const head = player.segments[0];
+                    const x = head.x - this.camera.x;
+                    const y = head.y - this.camera.y - player.headSize - 25;
+
+                    this.ctx.fillStyle = 'white';
+                    this.ctx.font = 'bold 14px Arial';
+                    this.ctx.textAlign = 'center';
+                    this.ctx.strokeStyle = 'black';
+                    this.ctx.lineWidth = 3;
+                    this.ctx.strokeText(player.name, x, y);
+                    this.ctx.fillText(player.name, x, y);
+                }
+            }
+
+            drawBoundaries() {
+                this.ctx.strokeStyle = '#ff6b6b';
+                this.ctx.lineWidth = 5;
+                this.ctx.setLineDash([20, 20]);
+
+                // Left boundary
+                if (this.camera.x < 50) {
+                    this.ctx.beginPath();
+                    this.ctx.moveTo(-this.camera.x, 0);
+                    this.ctx.lineTo(-this.camera.x, this.canvas.height);
+                    this.ctx.stroke();
+                }
+
+                // Right boundary
+                if (this.camera.x + this.canvas.width > this.worldSize - 50) {
+                    this.ctx.beginPath();
+                    this.ctx.moveTo(this.worldSize - this.camera.x, 0);
+                    this.ctx.lineTo(this.worldSize - this.camera.x, this.canvas.height);
+                    this.ctx.stroke();
+                }
+
+                // Top boundary
+                if (this.camera.y < 50) {
+                    this.ctx.beginPath();
+                    this.ctx.moveTo(0, -this.camera.y);
+                    this.ctx.lineTo(this.canvas.width, -this.camera.y);
+                    this.ctx.stroke();
+                }
+
+                // Bottom boundary
+                if (this.camera.y + this.canvas.height > this.worldSize - 50) {
+                    this.ctx.beginPath();
+                    this.ctx.moveTo(0, this.worldSize - this.camera.y);
+                    this.ctx.lineTo(this.canvas.width, this.worldSize - this.camera.y);
+                    this.ctx.stroke();
+                }
+
+                this.ctx.setLineDash([]);
+            }
+
+            darkenColor(color, amount) {
+                const hex = color.replace('#', '');
+                const r = Math.max(0, parseInt(hex.substr(0, 2), 16) * (1 - amount));
+                const g = Math.max(0, parseInt(hex.substr(2, 2), 16) * (1 - amount));
+                const b = Math.max(0, parseInt(hex.substr(4, 2), 16) * (1 - amount));
+                return `rgb(${Math.floor(r)}, ${Math.floor(g)}, ${Math.floor(b)})`;
+            }
+
+            updateUI() {
+                if (!this.gameState) return;
+
+                const player = this.gameState.players[this.playerId];
+                if (player) {
+                    document.getElementById('length').textContent = player.segments.length;
+                    document.getElementById('score').textContent = player.score;
+                }
+
+                document.getElementById('playerCount').textContent = Object.keys(this.gameState.players).length;
+
+                // Update leaderboard
+                const leaders = Object.values(this.gameState.players)
+                    .sort((a, b) => b.score - a.score)
+                    .slice(0, 10);
+
+                const leaderList = document.getElementById('leaderList');
+                leaderList.innerHTML = leaders.map((player, index) => 
+                    `<div class="leader-entry">${index + 1}. ${player.name}: ${player.score}</div>`
+                ).join('');
+            }
+
+            showGameOver(score, length) {
+                document.getElementById('finalScore').textContent = score;
+                document.getElementById('finalLength').textContent = length;
+                document.getElementById('gameOver').style.display = 'block';
+            }
+
+            gameLoop() {
+                this.updateInput();
+                this.render();
+                requestAnimationFrame(() => this.gameLoop());
+            }
+        }
+
+        // Start the game
+        new SlitherClient();
+    </script>
+</body>
+</html>
