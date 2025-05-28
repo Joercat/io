@@ -239,7 +239,9 @@
             }
 
             setupSocket() {
-                this.socket = io('http://localhost:3000');
+                // Use the current page's origin for the socket connection
+                // This works for localhost, Render, Heroku, Netlify, etc.
+                this.socket = io();
                 
                 this.socket.on('connect', () => {
                     document.getElementById('connectionStatus').innerHTML = 'Connected';
