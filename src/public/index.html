@@ -239,7 +239,7 @@
             }
 
             setupSocket() {
-                this.socket = io('http://localhost:3000');
+                this.socket = io('http://localhost:10000');
                 
                 this.socket.on('connect', () => {
                     document.getElementById('connectionStatus').innerHTML = 'Connected';
