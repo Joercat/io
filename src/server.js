@@ -316,7 +316,10 @@ io.on('connection', (socket) => {
 });
 
 // Start server
-const PORT = process.env.PORT || 10000;
-server.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
+const PORT = process.env.PORT || 3000;
+server.listen(PORT, '0.0.0.0', () => {
+    console.log(`🐍 Slither.io server running on port ${PORT}`);
+    if (process.env.RENDER) {
+        console.log(`🌐 Render URL: https://${process.env.RENDER_EXTERNAL_HOSTNAME}`);
+    }
 });
