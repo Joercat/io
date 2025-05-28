@@ -8,12 +8,18 @@ const server = http.createServer(app);
 const io = socketIo(server, {
     cors: {
         origin: "*",
-        methods: ["GET", "POST"]
+        methods: ["GET", "POST"],
+        credentials: true
     }
 });
 
-// Serve static files
-app.use(express.static(path.join(__dirname, 'public')));
+// Serve static files from public directory
+app.use(express.static('public'));
+
+// Serve the main page
+app.get('/', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
 
 // Game configuration
 const CONFIG = {
@@ -312,5 +318,5 @@ io.on('connection', (socket) => {
 // Start server
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
-    console.log(`🐍 Slither.io server running on port ${PORT}`);
+    console.log(`Server running on port ${PORT}`);
 });
