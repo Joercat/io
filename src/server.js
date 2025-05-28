@@ -73,15 +73,21 @@ class GameServer {
             '#f0932b', '#eb4d4b', '#6c5ce7', '#a29bfe'
         ];
 
-        const startX = Math.random() * (CONFIG.WORLD_SIZE - 200) + 100;
-        const startY = Math.random() * (CONFIG.WORLD_SIZE - 200) + 100;
+        // Find a safe spawn location away from other players
+        let startX, startY, attempts = 0;
+        do {
+            startX = Math.random() * (CONFIG.WORLD_SIZE - 400) + 200;
+            startY = Math.random() * (CONFIG.WORLD_SIZE - 400) + 200;
+            attempts++;
+        } while (attempts < 50 && !this.isSafeSpawnLocation(startX, startY));
+
         const angle = Math.random() * Math.PI * 2;
 
         const segments = [];
         for (let i = 0; i < CONFIG.INITIAL_SNAKE_LENGTH; i++) {
             segments.push({
-                x: startX - i * 15 * Math.cos(angle),
-                y: startY - i * 15 * Math.sin(angle)
+                x: startX - i * 20 * Math.cos(angle),
+                y: startY - i * 20 * Math.sin(angle)
             });
         }
 
@@ -97,12 +103,37 @@ class GameServer {
             bodySize: CONFIG.BODY_SIZE,
             score: 0,
             health: 100,
-            lastUpdate: Date.now()
+            lastUpdate: Date.now(),
+            spawnTime: Date.now(), // Track when player spawned
+            isInvulnerable: true // Start with spawn protection
         };
+    }
+
+    isSafeSpawnLocation(x, y) {
+        const safeDistance = 150; // Minimum distance from other players
+        
+        for (const player of Object.values(this.players)) {
+            if (!player.segments.length) continue;
+            
+            for (const segment of player.segments) {
+                const distance = Math.sqrt(
+                    Math.pow(x - segment.x, 2) + Math.pow(y - segment.y, 2)
+                );
+                if (distance < safeDistance) {
+                    return false;
+                }
+            }
+        }
+        return true;
     }
 
     updatePlayer(player, deltaTime) {
         if (!player.segments.length) return;
+
+        // Check if spawn immunity should end
+        if (player.isInvulnerable && Date.now() - player.spawnTime > CONFIG.SPAWN_IMMUNITY_TIME) {
+            player.isInvulnerable = false;
+        }
 
         const speed = player.boosting ? CONFIG.BOOST_SPEED : CONFIG.INITIAL_SPEED;
         const head = player.segments[0];
@@ -111,8 +142,10 @@ class GameServer {
         const newX = head.x + Math.cos(player.angle) * speed;
         const newY = head.y + Math.sin(player.angle) * speed;
 
-        // Boundary collision - kill player
-        if (newX < 0 || newX > CONFIG.WORLD_SIZE || newY < 0 || newY > CONFIG.WORLD_SIZE) {
+        // Boundary collision - more forgiving near edges
+        const margin = 30; // Allow some leeway near boundaries
+        if (newX < -margin || newX > CONFIG.WORLD_SIZE + margin || 
+            newY < -margin || newY > CONFIG.WORLD_SIZE + margin) {
             this.killPlayer(player.id);
             return;
         }
@@ -127,9 +160,9 @@ class GameServer {
             player.growing = false;
         }
 
-        // Boost consumption
-        if (player.boosting && player.segments.length > CONFIG.INITIAL_SNAKE_LENGTH) {
-            if (Math.random() < 0.02) { // 2% chance per frame when boosting
+        // Boost consumption - only if snake is long enough
+        if (player.boosting && player.segments.length > CONFIG.INITIAL_SNAKE_LENGTH + 3) {
+            if (Math.random() < 0.015) { // Reduced consumption rate
                 player.segments.pop();
                 player.score = Math.max(0, player.score - 1);
             }
@@ -138,8 +171,10 @@ class GameServer {
         // Check food collision
         this.checkFoodCollision(player);
 
-        // Check snake collisions
-        this.checkSnakeCollisions(player);
+        // Only check snake collisions if not invulnerable
+        if (!player.isInvulnerable) {
+            this.checkSnakeCollisions(player);
+        }
     }
 
     checkFoodCollision(player) {
@@ -170,6 +205,9 @@ class GameServer {
         for (const otherPlayer of Object.values(this.players)) {
             if (otherPlayer.id === player.id) continue;
             if (!otherPlayer.segments.length) continue;
+            
+            // Skip collision if other player is also invulnerable
+            if (otherPlayer.isInvulnerable) continue;
 
             for (let i = 0; i < otherPlayer.segments.length; i++) {
                 const segment = otherPlayer.segments[i];
@@ -177,9 +215,10 @@ class GameServer {
                     Math.pow(head.x - segment.x, 2) + Math.pow(head.y - segment.y, 2)
                 );
 
-                const collisionRadius = player.headSize + (i === 0 ? otherPlayer.headSize : otherPlayer.bodySize);
+                // More forgiving collision detection
+                const collisionRadius = (player.headSize + (i === 0 ? otherPlayer.headSize : otherPlayer.bodySize)) - CONFIG.COLLISION_TOLERANCE;
                 
-                if (distance < collisionRadius - 2) {
+                if (distance < collisionRadius) {
                     this.killPlayer(player.id);
                     // Create food from dead snake
                     this.spawnFoodFromSnake(player);
@@ -188,14 +227,15 @@ class GameServer {
             }
         }
 
-        // Check self collision (skip first few segments)
-        for (let i = 4; i < player.segments.length; i++) {
+        // Check self collision (skip more segments for more forgiving gameplay)
+        for (let i = 8; i < player.segments.length; i++) { // Increased from 4 to 8
             const segment = player.segments[i];
             const distance = Math.sqrt(
                 Math.pow(head.x - segment.x, 2) + Math.pow(head.y - segment.y, 2)
             );
 
-            if (distance < player.headSize + player.bodySize - 2) {
+            // More forgiving self-collision
+            if (distance < (player.headSize + player.bodySize) - CONFIG.COLLISION_TOLERANCE) {
                 this.killPlayer(player.id);
                 this.spawnFoodFromSnake(player);
                 return;
